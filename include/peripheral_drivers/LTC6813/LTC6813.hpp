@@ -209,8 +209,14 @@ public:
 		bool GPIO3();
 		bool GPIO4();
 		bool GPIO5();
-		uint16_t VUV();
-		uint16_t VOV();
+		uint16_t VUV() const
+		{
+			return Byte_util::make_u16(m_reg[2], m_reg[1]) & 0x0FFF;
+		}
+		uint16_t VOV() const
+		{
+			return (Byte_util::make_u16(m_reg[3], m_reg[2]) >> 4) & 0x0FFF;
+		}
 		DCTO_TIM DCTO();
 		bool REFON();//reference stay on
 		bool ADCOPT();//adc mode option bit
@@ -261,7 +267,7 @@ public:
 		}
 		uint16_t CtwoV() const
 		{
-			return Byte_util::make_u16(m_reg[3], m_reg[2]);	
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);
 		}
 		uint16_t CthreeV() const
 		{
@@ -630,6 +636,16 @@ public:
 
 	};
 
+	constexpr static S_PIN_CTL get_s_pin_ctl(const uint8_t reg, const uint8_t offset)
+	{
+		return static_cast<S_PIN_CTL>(Byte_util::mask_lshift(reg, uint8_t(0x07) << offset, offset));
+	}
+
+	constexpr static PWM_ON_OFF get_pwm_on_off(const uint8_t reg, const uint8_t offset)
+	{
+		return static_cast<PWM_ON_OFF>(Byte_util::mask_lshift(reg, uint8_t(0x07) << offset, offset));
+	}
+
 	class SCTL : public COMM_Reg
 	{
 	public:
@@ -681,46 +697,113 @@ public:
 		{
 			return get_s_pin_ctl(m_reg[5], 4);
 		}
-	protected:
-		constexpr static S_PIN_CTL get_s_pin_ctl(const uint8_t reg, const uint8_t offset)
-		{
-			return static_cast<S_PIN_CTL>(Byte_util::mask_lshift(reg, uint8_t(0x07) << offset, offset));
-		}
 	};
 
 	class PWM : public COMM_Reg
 	{
 	public:
-		PWM_ON_OFF PWM1();
-		PWM_ON_OFF PWM2();
-		PWM_ON_OFF PWM3();
-		PWM_ON_OFF PWM4();
-		PWM_ON_OFF PWM5();
-		PWM_ON_OFF PWM6();
-		PWM_ON_OFF PWM7();
-		PWM_ON_OFF PWM8();
-		PWM_ON_OFF PWM9();
-		PWM_ON_OFF PWM10();
-		PWM_ON_OFF PWM11();
-		PWM_ON_OFF PWM12();
+		PWM_ON_OFF PWM1()
+		{
+			return get_pwm_on_off(m_reg[0], 0);
+		}
+		PWM_ON_OFF PWM2()
+		{
+			return get_pwm_on_off(m_reg[0], 4);
+		}
+		PWM_ON_OFF PWM3()
+		{
+			return get_pwm_on_off(m_reg[1], 0);
+		}
+		PWM_ON_OFF PWM4()
+		{
+			return get_pwm_on_off(m_reg[1], 4);
+		}
+		PWM_ON_OFF PWM5()
+		{
+			return get_pwm_on_off(m_reg[2], 0);
+		}
+		PWM_ON_OFF PWM6()
+		{
+			return get_pwm_on_off(m_reg[2], 4);
+		}
+		PWM_ON_OFF PWM7()
+		{
+			return get_pwm_on_off(m_reg[3], 0);
+		}
+		PWM_ON_OFF PWM8()
+		{
+			return get_pwm_on_off(m_reg[3], 4);
+		}
+		PWM_ON_OFF PWM9()
+		{
+			return get_pwm_on_off(m_reg[4], 0);
+		}
+		PWM_ON_OFF PWM10()
+		{
+			return get_pwm_on_off(m_reg[4], 4);
+		}
+		PWM_ON_OFF PWM11()
+		{
+			return get_pwm_on_off(m_reg[5], 0);
+		}
+		PWM_ON_OFF PWM12()
+		{
+			return get_pwm_on_off(m_reg[5], 4);
+		}
 	};
 
 	class PSB : public COMM_Reg
 	{
 	public:
-		PWM_ON_OFF PWM13();
-		PWM_ON_OFF PWM14();
-		PWM_ON_OFF PWM15();
-		PWM_ON_OFF PWM16();
-		PWM_ON_OFF PWM17();
-		PWM_ON_OFF PWM18();
+		PWM_ON_OFF PWM13() const
+		{
+			return get_pwm_on_off(m_reg[0], 0);
+		}
+		PWM_ON_OFF PWM14() const
+		{
+			return get_pwm_on_off(m_reg[0], 4);
+		}
+		PWM_ON_OFF PWM15() const
+		{
+			return get_pwm_on_off(m_reg[1], 0);
+		}
+		PWM_ON_OFF PWM16() const
+		{
+			return get_pwm_on_off(m_reg[1], 4);
+		}
+		PWM_ON_OFF PWM17() const
+		{
+			return get_pwm_on_off(m_reg[2], 0);
+		}
+		PWM_ON_OFF PWM18() const
+		{
+			return get_pwm_on_off(m_reg[2], 4);
+		}
 
-		S_PIN_CTL SCTL13(); 
-		S_PIN_CTL SCTL14();
-		S_PIN_CTL SCTL15();
-		S_PIN_CTL SCTL16();
-		S_PIN_CTL SCTL17();
-		S_PIN_CTL SCTL18();
+		S_PIN_CTL SCTL13() const
+		{
+			return get_s_pin_ctl(m_reg[3], 0);
+		} 
+		S_PIN_CTL SCTL14() const
+		{
+			return get_s_pin_ctl(m_reg[3], 4);
+		}
+		S_PIN_CTL SCTL15() const
+		{
+			return get_s_pin_ctl(m_reg[4], 0);
+		}
+		S_PIN_CTL SCTL16() const
+		{
+			return get_s_pin_ctl(m_reg[4], 4);
+		}
+		S_PIN_CTL SCTL17() const
+		{
+			return get_s_pin_ctl(m_reg[5], 0);
+		}
+		S_PIN_CTL SCTL18() const
+		{
+			return get_s_pin_ctl(m_reg[5], 4);
+		}
 	};
 
 	constexpr static float vuv_to_volts(const uint16_t vuv)
