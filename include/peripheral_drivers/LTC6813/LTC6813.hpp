@@ -1,6 +1,9 @@
 #pragma once
 
+#include "peripheral_drivers/LTC6813/PEC.hpp"
+
 #include "emb_hal/hal/SPI_base.hpp"
+#include "common_util/Byte_util.hpp"
 
 #include <algorithm>
 #include <array>
@@ -70,17 +73,12 @@ public:
 		UNMUTE  = 0x0029
 	};
 
-	constexpr static uint16_t get_adcv_command(const uint8_t md, const bool dcp, const uint8_t ch)
-	{
-		return uint16_t(COMMAND_CODE::ADCV) | (uint16_t(md & 0x03) << 7) | (uint16_t(dcp) << 4) | uint16_t(ch & 0x07);
-	}
-
 	enum class ADC_MODE
 	{
-		ADC_422HZ,
-		ADC_27KHZ,
-		ADC_7KHZ,
-		ADC_26HZ,
+		ADC_MODE_0 = 0, //ADC_422HZ, ADC_1kHZ
+		ADC_MODE_1 = 1, //ADC_27KHZ, ADC_14kHZ
+		ADC_MODE_2 = 2, //ADC_7KHZ,  ADC_3kHZ
+		ADC_MODE_3 = 3  //ADC_26HZ,  ADC_2kHZ
 	};
 
 	enum class DCHG_PERMITTED
@@ -98,6 +96,12 @@ public:
 		CELLS_4_10_16 = 4,
 		CELLS_5_11_17 = 5,
 		CELLS_6_12_18 = 6,
+	};
+
+	enum class PULL_MODE
+	{
+		PULL_DOWN  = 0,
+		PULL_UP    = 1
 	};
 
 	enum class SELFTEST_MODE
@@ -158,7 +162,47 @@ public:
 
 	};
 
-	class CFGA
+	constexpr static uint16_t get_adcv_command(const ADC_MODE md, const DCHG_PERMITTED dcp, const uint8_t ch)
+	{
+		return uint16_t(COMMAND_CODE::ADCV) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4) | Byte_util::mask_rshift<uint16_t>(ch, 0x07, 0);
+	}
+
+	constexpr static uint16_t get_adow_command(const ADC_MODE md, const PULL_MODE pup, const DCHG_PERMITTED dcp, const uint8_t ch)
+	{
+		return uint16_t(COMMAND_CODE::ADOW) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(pup, 0x01, 6) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4) | Byte_util::mask_rshift<uint16_t>(ch, 0x07, 0);
+	}
+
+	constexpr static uint16_t get_adstat_command(const ADC_MODE md, const uint8_t ch)
+	{
+		return uint16_t(COMMAND_CODE::ADSTAT) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(ch, 0x07, 0);
+	}
+
+	constexpr static uint16_t get_adcvax_command(const ADC_MODE md, const DCHG_PERMITTED dcp)
+	{
+		return uint16_t(COMMAND_CODE::ADCVAX) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4);
+	}
+
+	constexpr static uint16_t get_adcvsc(const ADC_MODE md, const DCHG_PERMITTED dcp)
+	{
+		return uint16_t(COMMAND_CODE::ADCVSC) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4);
+	}
+
+	static void gen_command(const uint16_t command, std::array<uint8_t, 4> out_array)
+	{
+		const uint16_t pec = LTC6813_PEC::pec15(command);
+		out_array[0] = Byte_util::get_b1(command);
+		out_array[1] = Byte_util::get_b0(command);
+		out_array[2] = Byte_util::get_b1(pec);
+		out_array[3] = Byte_util::get_b0(pec);
+	}
+
+	class COMM_Reg
+	{
+	protected:
+		std::array<uint8_t, 6> m_reg;	
+	};
+
+	class CFGA : public COMM_Reg
 	{
 		bool GPIO1();
 		bool GPIO2();
@@ -183,11 +227,9 @@ public:
 		bool DCC10();
 		bool DCC11();
 		bool DCC12();
-	protected:
-		std::array<uint8_t, 6> m_reg;
 	};
 
-	class CFGB
+	class CFGB : public COMM_Reg
 	{
 
 		bool GPIO6();
@@ -205,137 +247,448 @@ public:
 		bool DCC16();
 		bool DCC17();
 		bool DCC18();
-	protected:
-		std::array<uint8_t, 6> m_reg;
 	};
 
-	class CV
+	class CV : public COMM_Reg
 	{
 	public:
-		uint16_t C1V();
-		uint16_t C2V();
-		uint16_t C3V();
+
 	protected:
-		std::array<uint8_t, 6> m_reg;
+
+		uint16_t ConeV() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		uint16_t CtwoV() const
+		{
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);	
+		}
+		uint16_t CthreeV() const
+		{
+			return Byte_util::make_u16(m_reg[5], m_reg[4]);
+		}
 	};
 
-	class AUXA
+	class CVA : public CV
 	{
 	public:
-		uint16_t G1V();
-		uint16_t G2V();
-		uint16_t G3V();
+		uint16_t C1V() const
+		{
+			return ConeV();
+		}
+		uint16_t C2V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C3V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class AUXB
+	class CVB : public CV
 	{
 	public:
-		uint16_t G4V();
-		uint16_t G5V();
-		uint16_t REF();
+		uint16_t C4V() const
+		{
+			return ConeV();
+		}
+		uint16_t C5V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C6V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class AUXC
+	class CVC : public CV
 	{
 	public:
-		uint16_t G6V();
-		uint16_t G7V();
-		uint16_t G8V();
+		uint16_t C7V() const
+		{
+			return ConeV();
+		}
+		uint16_t C8V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C9V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class AUXD
+	class CVD : public CV
 	{
 	public:
-		uint16_t G9V();
-		bool C13_ov();
-		bool C13_uv();
-		bool C14_ov();
-		bool C14_uv();
-		bool C15_ov();
-		bool C15_uv();
-		bool C16_ov();
-		bool C16_uv();
-		bool C17_ov();
-		bool C17_uv();
-		bool C18_ov();
-		bool C18_uv();
+		uint16_t C10V() const
+		{
+			return ConeV();
+		}
+		uint16_t C11V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C12V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class STATUSA
+	class CVE : public CV
 	{
 	public:
-		uint16_t SC();
-		uint16_t ITMP();
-		uint16_t VA();
+		uint16_t C13V() const
+		{
+			return ConeV();
+		}
+		uint16_t C14V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C15V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class STATUSB
+	class CVF : public CV
 	{
 	public:
-		uint16_t VD();
-		bool C1_uv();
-		bool C1_ov();
-		bool C2_uv();
-		bool C2_ov();
-		bool C3_uv();
-		bool C3_ov();
-		bool C4_uv();
-		bool C4_ov();
-		bool C5_uv();
-		bool C5_ov();
-		bool C6_uv();
-		bool C6_ov();
-		bool C7_uv();
-		bool C7_ov();
-		bool C8_uv();
-		bool C8_ov();
-		bool C9_uv();
-		bool C9_ov();
-		bool C10_uv();
-		bool C10_ov();
-		bool C11_uv();
-		bool C11_ov();
-		bool C12_uv();
-		bool C12_ov();
-
-		uint8_t REV();
-		bool MUXFAIL();
-		bool THSD();
-
+		uint16_t C16V() const
+		{
+			return ConeV();
+		}
+		uint16_t C17V() const
+		{
+			return CtwoV();
+		}
+		uint16_t C18V() const
+		{
+			return CthreeV();
+		}
 	protected:
-		std::array<uint8_t, 6> m_reg;
+		
 	};
 
-	class SCTL
+	class AUXA : public COMM_Reg
 	{
 	public:
-		S_PIN_CTL SCTL1();
-		S_PIN_CTL SCTL2();
-		S_PIN_CTL SCTL3();
-		S_PIN_CTL SCTL4();
-		S_PIN_CTL SCTL5();
-		S_PIN_CTL SCTL6();
-		S_PIN_CTL SCTL7();
-		S_PIN_CTL SCTL8();
-		S_PIN_CTL SCTL9();
-		S_PIN_CTL SCTL10();
-		S_PIN_CTL SCTL11();
-		S_PIN_CTL SCTL12();
-	protected:
-		std::array<uint8_t, 6> m_reg;
+		uint16_t G1V() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		uint16_t G2V() const
+		{
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);
+		}
+		uint16_t G3V() const
+		{
+			return Byte_util::make_u16(m_reg[5], m_reg[4]);
+		}
 	};
 
-	class PWM
+	class AUXB : public COMM_Reg
+	{
+	public:
+		uint16_t G4V() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		uint16_t G5V() const
+		{
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);
+		}
+		uint16_t REF() const
+		{
+			return Byte_util::make_u16(m_reg[5], m_reg[4]);
+		}
+	};
+
+	class AUXC : public COMM_Reg
+	{
+	public:
+		uint16_t G6V() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		uint16_t G7V() const
+		{
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);
+		}
+		uint16_t G8V() const
+		{
+			return Byte_util::make_u16(m_reg[5], m_reg[4]);
+		}
+	};
+
+	class AUXD : public COMM_Reg
+	{
+	public:
+		uint16_t G9V() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		bool C13_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(0);
+		}
+		bool C13_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(1);
+		}
+		bool C14_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(2);
+		}
+		bool C14_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(3);
+		}
+		bool C15_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(4);
+		}
+		bool C15_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(5);
+		}
+		bool C16_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(6);
+		}
+		bool C16_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(7);
+		}
+		bool C17_uv() const
+		{
+			return m_reg[5] & Byte_util::bv_8(0);
+		}
+		bool C17_ov() const
+		{
+			return m_reg[5] & Byte_util::bv_8(1);
+		}
+		bool C18_uv() const
+		{
+			return m_reg[5] & Byte_util::bv_8(2);
+		}
+		bool C18_ov() const
+		{
+			return m_reg[5] & Byte_util::bv_8(3);
+		}
+	};
+
+	class STATUSA : public COMM_Reg
+	{
+	public:
+		uint16_t SC() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+		uint16_t ITMP() const
+		{
+			return Byte_util::make_u16(m_reg[3], m_reg[2]);
+		}
+		uint16_t VA() const
+		{
+			return Byte_util::make_u16(m_reg[5], m_reg[4]);
+		}
+	};
+
+	class STATUSB : public COMM_Reg
+	{
+	public:
+		uint16_t VD() const
+		{
+			return Byte_util::make_u16(m_reg[1], m_reg[0]);
+		}
+
+		bool C1_uv() const
+		{
+			return m_reg[2] & Byte_util::bv_8(0);
+		}
+		bool C1_ov() const
+		{
+			return m_reg[2] & Byte_util::bv_8(1);
+		}
+		bool C2_uv() const
+		{
+			return m_reg[2] & Byte_util::bv_8(2);
+		}
+		bool C2_ov() const
+		{
+			return m_reg[2] & Byte_util::bv_8(3);
+		}
+		bool C3_uv() const
+		{
+			return m_reg[2] & Byte_util::bv_8(4);
+		}
+		bool C3_ov() const
+		{
+			return m_reg[2] & Byte_util::bv_8(5);
+		}
+		bool C4_uv() const
+		{
+			return m_reg[2] & Byte_util::bv_8(6);
+		}
+		bool C4_ov() const
+		{
+			return m_reg[2] & Byte_util::bv_8(7);
+		}
+		bool C5_uv() const
+		{
+			return m_reg[3] & Byte_util::bv_8(0);
+		}
+		bool C5_ov() const
+		{
+			return m_reg[3] & Byte_util::bv_8(1);
+		}
+		bool C6_uv() const
+		{
+			return m_reg[3] & Byte_util::bv_8(2);
+		}
+		bool C6_ov() const
+		{
+			return m_reg[3] & Byte_util::bv_8(3);
+		}
+		bool C7_uv() const
+		{
+			return m_reg[3] & Byte_util::bv_8(4);
+		}
+		bool C7_ov() const
+		{
+			return m_reg[3] & Byte_util::bv_8(5);
+		}
+		bool C8_uv() const
+		{
+			return m_reg[3] & Byte_util::bv_8(6);
+		}
+		bool C8_ov() const
+		{
+			return m_reg[3] & Byte_util::bv_8(7);
+		}
+		bool C9_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(0);
+		}
+		bool C9_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(1);
+		}
+		bool C10_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(2);
+		}
+		bool C10_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(3);
+		}
+		bool C11_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(4);
+		}
+		bool C11_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(5);
+		}
+		bool C12_uv() const
+		{
+			return m_reg[4] & Byte_util::bv_8(6);
+		}
+		bool C12_ov() const
+		{
+			return m_reg[4] & Byte_util::bv_8(7);
+		}
+
+		bool THSD() const
+		{
+			return m_reg[5] & Byte_util::bv_8(0);
+		}
+		
+		bool MUXFAIL() const
+		{
+			return m_reg[5] & Byte_util::bv_8(1);
+		}
+
+		uint8_t REV() const
+		{
+			return Byte_util::mask_lshift(m_reg[5], 0x0F << 4, 4);
+		}
+
+	};
+
+	class SCTL : public COMM_Reg
+	{
+	public:
+		S_PIN_CTL SCTL1() const
+		{
+			return get_s_pin_ctl(m_reg[0], 0);
+		}
+		S_PIN_CTL SCTL2() const
+		{
+			return get_s_pin_ctl(m_reg[0], 4);
+		}
+		S_PIN_CTL SCTL3() const
+		{
+			return get_s_pin_ctl(m_reg[1], 0);
+		}
+		S_PIN_CTL SCTL4() const
+		{
+			return get_s_pin_ctl(m_reg[1], 4);
+		}
+		S_PIN_CTL SCTL5() const
+		{
+			return get_s_pin_ctl(m_reg[2], 0);
+		}
+		S_PIN_CTL SCTL6() const
+		{
+			return get_s_pin_ctl(m_reg[2], 4);
+		}
+		S_PIN_CTL SCTL7() const
+		{
+			return get_s_pin_ctl(m_reg[3], 0);
+		}
+		S_PIN_CTL SCTL8() const
+		{
+			return get_s_pin_ctl(m_reg[3], 4);
+		}
+		S_PIN_CTL SCTL9() const
+		{
+			return get_s_pin_ctl(m_reg[4], 0);
+		}
+		S_PIN_CTL SCTL10() const
+		{
+			return get_s_pin_ctl(m_reg[4], 4);
+		}
+		S_PIN_CTL SCTL11() const
+		{
+			return get_s_pin_ctl(m_reg[5], 0);
+		}
+		S_PIN_CTL SCTL12() const
+		{
+			return get_s_pin_ctl(m_reg[5], 4);
+		}
+	protected:
+		constexpr static S_PIN_CTL get_s_pin_ctl(const uint8_t reg, const uint8_t offset)
+		{
+			return static_cast<S_PIN_CTL>(Byte_util::mask_lshift(reg, uint8_t(0x07) << offset, offset));
+		}
+	};
+
+	class PWM : public COMM_Reg
 	{
 	public:
 		PWM_ON_OFF PWM1();
@@ -350,11 +703,9 @@ public:
 		PWM_ON_OFF PWM10();
 		PWM_ON_OFF PWM11();
 		PWM_ON_OFF PWM12();
-	protected:
-		std::array<uint8_t, 6> m_reg;
 	};
 
-	class PSB
+	class PSB : public COMM_Reg
 	{
 	public:
 		PWM_ON_OFF PWM13();
@@ -370,8 +721,6 @@ public:
 		S_PIN_CTL SCTL16();
 		S_PIN_CTL SCTL17();
 		S_PIN_CTL SCTL18();
-	protected:
-		std::array<uint8_t, 6> m_reg;
 	};
 
 	constexpr static float vuv_to_volts(const uint16_t vuv)

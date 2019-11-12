@@ -10,4 +10,5 @@ target_include_directories(periph_driv PUBLIC
 
 target_link_libraries(periph_driv PUBLIC
 	emb_util
+	common_util
 )

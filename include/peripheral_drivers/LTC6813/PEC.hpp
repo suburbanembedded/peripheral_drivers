@@ -17,7 +17,8 @@ class LTC6813_PEC
 public:
 
 	// void init_PEC15_Table();
-	uint16_t pec15(uint8_t const * const data, size_t len) const;
+	static uint16_t pec15(uint8_t const * const data, const size_t len);
+	static uint16_t pec15(const uint16_t data);
 
 protected:
 

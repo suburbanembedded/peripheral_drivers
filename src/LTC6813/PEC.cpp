@@ -34,15 +34,20 @@ void LTC6813_PEC::init_PEC15_Table()
 	}
 }
 */
-uint16_t LTC6813_PEC::pec15(uint8_t const * const data, size_t len) const
+uint16_t LTC6813_PEC::pec15(uint8_t const * const data, const size_t len)
 {
 	//PEC seed
 	uint16_t remainder = 16;
-	for (int i = 0; i < len; i++)
+	for(size_t i = 0; i < len; i++)
 	{
 		//calculate PEC table address
 		const uint16_t address = ((remainder >> 7) ^ data[i]) & 0xFF;
 		remainder = (remainder << 8) ^ pec15Table[address];
 	}
 	return remainder << 1;
+}
+
+uint16_t LTC6813_PEC::pec15(const uint16_t data)
+{
+	return pec15(reinterpret_cast<const uint8_t*>(&data), sizeof(data));
 }
