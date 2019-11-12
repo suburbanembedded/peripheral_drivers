@@ -52,13 +52,12 @@ public:
 		ADOL    = 0x0201,
 		ADAX    = 0x0460,
 		ADAXD   = 0x0400,
-		AXOW    = 0x0000,
-		AXST    = 0x0000,
-		ADSTAT  = 0x0000,
-		SDSTATD = 0x0000,
-		STATST  = 0x0000,
-		ADCVAX  = 0x0000,
-		ADCVSC  = 0x0000,
+		AXOW    = 0x0410,
+		AXST    = 0x0407,
+		ADSTAT  = 0x0468,
+		STATST  = 0x040F,
+		ADCVAX  = 0x046F,
+		ADCVSC  = 0x0467,
 		CLRCELL = 0x0711,
 		CLRAUX  = 0x0712,
 		CLRSTAT = 0x0713,
@@ -70,6 +69,11 @@ public:
 		MUTE    = 0x0028,
 		UNMUTE  = 0x0029
 	};
+
+	constexpr static uint16_t get_adcv_command(const uint8_t md, const bool dcp, const uint8_t ch)
+	{
+		return uint16_t(COMMAND_CODE::ADCV) | (uint16_t(md & 0x03) << 7) | (uint16_t(dcp) << 4) | uint16_t(ch & 0x07);
+	}
 
 	enum class ADC_MODE
 	{
