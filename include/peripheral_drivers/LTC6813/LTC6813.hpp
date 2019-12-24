@@ -2,7 +2,7 @@
 
 #include "peripheral_drivers/LTC6813/PEC.hpp"
 
-#include "emb_hal/hal/SPI_base.hpp"
+#include "emb_util/hal/SPI_base.hpp"
 #include "common_util/Byte_util.hpp"
 
 #include <algorithm>
@@ -16,7 +16,15 @@ public:
 	LTC6813();
 	~LTC6813();
 
-	static uint16_t calculate_pec(const uint16_t cmd);
+	bool initilize(SPI_base* const spi);
+
+	//vov, vuv, gpio[] ref, dcc[], dcto[]
+	bool set_cfga(const CFGA& cfga);
+	bool set_cfgb(const CFGA& cfgb);
+
+	bool convert_all_cells();
+	bool convert_all_cells_and_sum();
+	bool read_all_cells();
 
 	enum class COMMAND_CODE : uint16_t
 	{
@@ -162,7 +170,7 @@ public:
 
 	};
 
-	constexpr static uint16_t get_adcv_command(const ADC_MODE md, const DCHG_PERMITTED dcp, const uint8_t ch)
+	constexpr static uint16_t get_adcv_command(const ADC_MODE md, const DCHG_PERMITTED dcp, const CELL_SELECTION ch)
 	{
 		return uint16_t(COMMAND_CODE::ADCV) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4) | Byte_util::mask_rshift<uint16_t>(ch, 0x07, 0);
 	}
@@ -187,13 +195,13 @@ public:
 		return uint16_t(COMMAND_CODE::ADCVSC) | Byte_util::mask_rshift<uint16_t>(md, 0x03, 7) | Byte_util::mask_rshift<uint16_t>(dcp, 0x01, 4);
 	}
 
-	static void gen_command(const uint16_t command, std::array<uint8_t, 4> out_array)
+	static void gen_command(const uint16_t command, std::array<uint8_t, 4>* out_array)
 	{
 		const uint16_t pec = LTC6813_PEC::pec15(command);
-		out_array[0] = Byte_util::get_b1(command);
-		out_array[1] = Byte_util::get_b0(command);
-		out_array[2] = Byte_util::get_b1(pec);
-		out_array[3] = Byte_util::get_b0(pec);
+		(*out_array)[0] = Byte_util::get_b1(command);
+		(*out_array)[1] = Byte_util::get_b0(command);
+		(*out_array)[2] = Byte_util::get_b1(pec);
+		(*out_array)[3] = Byte_util::get_b0(pec);
 	}
 
 	class COMM_Reg
@@ -204,55 +212,235 @@ public:
 
 	class CFGA : public COMM_Reg
 	{
-		bool GPIO1();
-		bool GPIO2();
-		bool GPIO3();
-		bool GPIO4();
-		bool GPIO5();
+		//GPIO
+		//write - 0 = pull down on
+		//        1 = pull down off
+		//read  - 0 = read 0
+		//      - 1 = read 1
+
+		//DCCx where x in [1,18]
+		//        0 = short switch off
+		//        1 = short switch on
+		//DCC0
+		//        0 = GPIO9 pull down off
+		//        1 = GPIO9 pull down on
+		bool GPIO1() const
+		{
+			return m_reg[0] & Byte_util::bv_8(3);
+		}
+		void set_GPIO1(const bool val)
+		{
+			m_reg[0] = set_bit(m_reg[0], 3, val);			
+		}
+		bool GPIO2() const
+		{
+			return m_reg[0] & Byte_util::bv_8(4);
+		}
+		void set_GPIO2(const bool val)
+		{
+			m_reg[0] = set_bit(m_reg[0], 4, val);
+		}
+		bool GPIO3() const
+		{
+			return m_reg[0] & Byte_util::bv_8(5);
+		}
+		void set_GPIO3(const bool val)
+		{
+			m_reg[0] = set_bit(m_reg[0], 5, val);
+		}
+		bool GPIO4() const
+		{
+			return m_reg[0] & Byte_util::bv_8(6);
+		}
+		void set_GPIO4(const bool val)
+		{
+			m_reg[0] = set_bit(m_reg[0], 6, val);
+		}
+		bool GPIO5() const
+		{
+			return m_reg[0] & Byte_util::bv_8(7);
+		}
+		void set_GPIO5(const bool val)
+		{
+			m_reg[0] = set_bit(m_reg[0], 7, val);
+		}
 		uint16_t VUV() const
 		{
 			return Byte_util::make_u16(m_reg[2], m_reg[1]) & 0x0FFF;
+		}
+		void set_VUV(const uint16_t vuv)
+		{
+			m_reg[1] = Byte_util::get_b0(vuv);
+			m_reg[2] = rmw_mask(m_reg[2], Byte_util::get_b1(vuv), 0, 0x0F);
+		}
+		bool set_VUV(const float vuv)
+		{
+			uint16_t temp;
+			if(!volts_to_vuv(vuv, &temp))
+			{
+				return false;
+			}
+
+			set_VUV(temp);
+			return true;
 		}
 		uint16_t VOV() const
 		{
 			return (Byte_util::make_u16(m_reg[3], m_reg[2]) >> 4) & 0x0FFF;
 		}
-		DCTO_TIM DCTO();
-		bool REFON();//reference stay on
-		bool ADCOPT();//adc mode option bit
-		bool DTEN();//discharge timer enable
-		bool DCC1();
-		bool DCC2();
-		bool DCC3();
-		bool DCC4();
-		bool DCC5();
-		bool DCC6();
-		bool DCC7();
-		bool DCC8();
-		bool DCC9();
-		bool DCC10();
-		bool DCC11();
-		bool DCC12();
+		void set_VOV(const uint16_t vov) const
+		{
+			const uint16_t temp = vov << 4;
+			m_reg[2] = rmw_mask(m_reg[3], Byte_util::get_b0(temp), 0, 0xF0);
+			m_reg[3] = Byte_util::get_b1(temp);
+		}
+		bool set_VOV(const float vov)
+		{
+			uint16_t temp;
+			if(!volts_to_vov(vov, &temp))
+			{
+				return false;
+			}
+
+			set_VOV(temp);
+			return true;
+		}
+		DCTO_TIM DCTO() const 
+		{
+			return (m_reg[5] >> 4) & 0x0F;
+		}
+		//reference stay on
+		bool REFON() const 
+		{
+			return m_reg[0] & Byte_util::bv_8(2);
+		}
+		//adc mode option bit
+		bool ADCOPT() const 
+		{
+			return m_reg[0] & Byte_util::bv_8(0);
+		}
+		//discharge timer enable
+		bool DTEN() const 
+		{
+			return m_reg[0] & Byte_util::bv_8(1);
+		}
+		bool DCC1() const
+		{
+			return m_reg[4] & Byte_util::bv_8(0);
+		}
+		bool DCC2() const
+		{
+			return m_reg[4] & Byte_util::bv_8(1);
+		}
+		bool DCC3() const
+		{
+			return m_reg[4] & Byte_util::bv_8(2);
+		}
+		bool DCC4() const
+		{
+			return m_reg[4] & Byte_util::bv_8(3);
+		}
+		bool DCC5() const
+		{
+			return m_reg[4] & Byte_util::bv_8(4);
+		}
+		bool DCC6() const
+		{
+			return m_reg[4] & Byte_util::bv_8(5);
+		}
+		bool DCC7() const
+		{
+			return m_reg[4] & Byte_util::bv_8(6);
+		}
+		bool DCC8() const
+		{
+			return m_reg[4] & Byte_util::bv_8(7);
+		}
+		bool DCC9() const
+		{
+			return m_reg[5] & Byte_util::bv_8(0);
+		}
+		bool DCC10() const
+		{
+			return m_reg[5] & Byte_util::bv_8(1);
+		}
+		bool DCC11() const
+		{
+			return m_reg[5] & Byte_util::bv_8(2);
+		}
+		bool DCC12() const
+		{
+			return m_reg[5] & Byte_util::bv_8(3);
+		}
 	};
 
 	class CFGB : public COMM_Reg
 	{
 
-		bool GPIO6();
-		bool GPIO7();
-		bool GPIO8();
-		bool GPIO9();
-		bool MUTE();//mute
-		bool FDRF();//force digital redundancy failure
+		bool GPIO6() const
+		{
+			return m_reg[0] & Byte_util::bv_8(0);
+		}
+		void set_GPIO6(const bool val)
+		{
+			set_bit(m_reg[0], 0, val);
+		}
+		bool GPIO7() const
+		{
+			return m_reg[0] & Byte_util::bv_8(1);
+		}
+		void set_GPIO7(const bool val)
+		{
+			set_bit(m_reg[0], 1, val);
+		}
+		bool GPIO8() const
+		{
+			return m_reg[0] & Byte_util::bv_8(2);
+		}
+		void set_GPIO8(const bool val)
+		{
+			set_bit(m_reg[0], 2, val);
+		}
+		bool GPIO9() const
+		{
+			return m_reg[0] & Byte_util::bv_8(3);
+		}
+		void set_GPIO9(const bool val)
+		{
+			set_bit(m_reg[0], 3, val);
+		}
+		bool MUTE() const;//mute
+		bool FDRF() const;//force digital redundancy failure
 		REDUNDANCY_PATH PS();
-		bool DTMEN();//enable discharge timer monitor
-		bool DCC0();//gpio9 pull down
-		bool DCC13();
-		bool DCC14();
-		bool DCC15();
-		bool DCC16();
-		bool DCC17();
-		bool DCC18();
+		bool DTMEN() const;//enable discharge timer monitor
+		bool DCC0() const//gpio9 pull down
+		{
+			return m_reg[1] & Byte_util::bv_8(2);
+		}
+		bool DCC13() const
+		{
+			return m_reg[0] & Byte_util::bv_8(4);
+		}
+		bool DCC14() const
+		{
+			return m_reg[0] & Byte_util::bv_8(5);
+		}
+		bool DCC15() const
+		{
+			return m_reg[0] & Byte_util::bv_8(6);
+		}
+		bool DCC16() const
+		{
+			return m_reg[0] & Byte_util::bv_8(7);
+		}
+		bool DCC17() const
+		{
+			return m_reg[1] & Byte_util::bv_8(0);
+		}
+		bool DCC18() const
+		{
+			return m_reg[1] & Byte_util::bv_8(1);
+		}
 	};
 
 	class CV : public COMM_Reg
@@ -859,40 +1047,41 @@ public:
 
 	constexpr static float cell_to_volts(const uint16_t cell)
 	{
-		return float(cell) * 0.0001f;
+		return float(cell) * 0.000100f;
 	}
 
 	constexpr static float gpio_to_volts(const uint16_t gpio)
 	{
-		return float(gpio) * 0.0001f;
+		return float(gpio) * 0.000100f;
 	}
 
 	constexpr static float ref_to_volts(const uint16_t ref)
 	{
-		return float(ref) * 0.0001f;
+		return float(ref) * 0.000100f;
 	}
 
 	constexpr static float sc_to_volts(const uint16_t sc)
 	{
-		return float(sc) * 0.0030f;
+		return float(sc) * 0.003000f;
 	}
 
 	constexpr static float itmp_to_degC(const uint16_t itmp)
 	{
-		return float(itmp) * 0.001f / 7.6f - 276.0f;
+		return float(itmp) * 0.001000f / 7.6f - 276.0f;
 	}
 
 	constexpr static float va_to_volts(const uint16_t va)
 	{
-		return float(va) * 0.0001f;
+		return float(va) * 0.000100f;
 	}
 
 	constexpr static float vd_to_volts(const uint16_t vd)
 	{
-		return float(vd) * 0.0001f;
+		return float(vd) * 0.000100f;
 	}
 
 protected:
 
 	SPI_base* m_spi;
+	GPIO_base* m_gpio;
 };
